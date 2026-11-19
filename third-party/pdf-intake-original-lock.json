@@ -1,0 +1,36 @@
+{
+  "browserStatus": "LIMITED_CLOUD_CHROME_FULL_BUNDLE_MOCK_HOST_SYNTHETIC_PASS",
+  "runtimeSha256": "dc31424499107f12ed0cf917f2968ac4f43af6dbf76f93cc18bd56462ab09639",
+  "childSourceSha256": "4d9241f5bf283c9769eece16318310d5a4b6adc9cf70abe410260169e038ecdb",
+  "cspScriptHash": "/OlfAv3/xmKmn1xWR+MT3ryZceSe7TDfEJeopcSdfCg=",
+  "files": {
+    "child-entry.mjs": "3afde820de23086c7fcbfd430e5a2fe128b77df39bf1017f710566ccf9ea051d",
+    "runtime.iife.js": "dc31424499107f12ed0cf917f2968ac4f43af6dbf76f93cc18bd56462ab09639",
+    "child-source.mjs": "4d9241f5bf283c9769eece16318310d5a4b6adc9cf70abe410260169e038ecdb",
+    "child-bundle.mjs": "fce95f02fdffc662a69f5c5647e313debc9971e49eed30df1097a8a5c49d7c28",
+    "protocol.mjs": "f87737e960bd2ec9041518ce1fbc890215f115e75a67bc6131d8249fe8c105b2",
+    "tests.mjs": "e4a15b9a4f233fec96da4bc6763504f10d2670d9be262b01b73d1c39169de633",
+    "test-result.json": "354c4bf022846a5597dc8c554fa2dafc071c94b51fb0504a3055bad325883ff2",
+    "policy.mjs": "9fd27e0d56dd3f9fd27fbfe43baf69e50bb8794803009ff1383005b80743eaf1",
+    "build.mjs": "2bf7aaca323b92678b7455d795bb4cf6eada79fb79763be0f623c88b5dd0c1bf",
+    "README.zh.md": "8aeccbb06ae517d1feeb8c1c111d519295ef6c2f4f8fa86ee2d551ecb8b60a6f",
+    "parser.mjs": "edf6df11907ccd70a013186e96fa2b25751805625492a54531a9e1551a5669d8",
+    "srcdoc.mjs": "5af7373b3826faac01b3f0a53204c04e11f5878dd83c85648f3f8a35e4f21b1c",
+    "controller.mjs": "d7f4f9f62459e650a37309a799234118e424345ba218f28595dbb180e12e1c78",
+    "vendor/worker-classic-source.mjs": "bda4e3fd44b09be1ef421f319e3b7d178af83ee87ca1d3c4ee1b519547801257",
+    "vendor/DERIVED-BUILD.json": "28025682d0c018c6709bc5a58d89010e12aa100d1f9a394e1746b5dac1be7dca",
+    "vendor/pdf.mjs": "495588717f62303a839e91a5343deebf1b41f52e2f9f6361e73dee6ea6a4355e",
+    "vendor/binary-assets.mjs": "da0b2f252da20833ec19cda8990a8a0cd64bb8bbd948180d4dd16715d2a087ab",
+    "licenses/standard_fonts-LICENSE_LIBERATION": "d2c4d5b3e115a519cb58eb691aa64538397e2611f9ebe801392cf9667997e7dc",
+    "licenses/cmaps-LICENSE": "aa92ab5a472974865a96fd4a4e9c13bb41bf6fe1b309cb6b8da48bc9e19839a2",
+    "licenses/pdfjs-Apache-2.0.txt": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "licenses/PDFJS-LICENSE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "licenses/standard_fonts-LICENSE_FOXIT": "b578cdd2345840ada550bd12519533812320d5f1d21cf4c1c7e1b1b0a31c98b7"
+  },
+  "browserEvidence": {
+    "report": "../prism-pdf-native-browser-lab/BROWSER-QA.md",
+    "confirmation": "../prism-pdf-native-browser-lab/BROWSER-CONFIRM.json",
+    "officialAuthenticatedHost": false,
+    "hardResourceOrFullNetworkProof": false
+  }
+}

@@ -1,0 +1,49 @@
+/** Projection from one already validated capture. No storage, execution or authority. */
+import {freezeProgress} from './research-progress-core.mjs';
+import {formatPaperResultsReport,PAPER_RESULTS_REPORT_LIMIT} from './paper-results-core.mjs';
+import {sha256} from './custom-core.mjs';
+export async function projectQueueHistory(state,crypto=globalThis.crypto){
+ const queues=[];for(const q of state.queueState?.queues??[]){const {phase,cursor,receipts,...fixed}=q;const receiptDigests=[];for(const r of receipts)receiptDigests.push(await sha256(JSON.stringify(r),crypto));queues.push({id:q.id,fixed:await sha256(JSON.stringify(fixed),crypto),phase,cursor,receipts:receiptDigests});}return {schema:state.schema,queues};
+}
+export function assertProjectQueueHistory(previous,next){
+ if(!previous)return;const ranks={'prism-research-instances/v1':1,'prism-research-instances/v2':2,'prism-research-instances/v3':3};if(!ranks[previous.schema]||!ranks[next.schema]||ranks[next.schema]<ranks[previous.schema])throw Error('PROGRESS_QUEUE_HISTORY_CHANGED');
+ for(const old of previous.queues){const q=next.queues.find(q=>q.id===old.id);if(!q||q.fixed!==old.fixed||q.cursor<old.cursor||q.receipts.length<old.receipts.length||old.receipts.some((r,i)=>q.receipts[i]!==r)||['complete','cancelled'].includes(old.phase)&&JSON.stringify(q)!==JSON.stringify(old))throw Error('PROGRESS_QUEUE_HISTORY_CHANGED');}
+}
+const clone=x=>JSON.parse(JSON.stringify(x)),bytes=s=>new TextEncoder().encode(s).length,fail=code=>{throw Error(code)};
+export function createProjectResultsDetail({namespace,projectId,project,members=[],rows=[],queues,instances,sources}){
+ const coverage={scope:'当前所选项目的当前成员论文；悬空或已解除关联的条目仅显示元数据，不可打开或导出论文内容。',queues:'仅项目规划队列的最新版本及项目实例合成队列；未纳入 :library-queue-v1 / :project-execution-owner-v1 的桥接队列及归属历史，不是全部队列。',synthetic:'合成队列的 phase、cursor 和 receipt 只是已保存模拟执行元数据，不代表 live 连接或研究完成；人工批准、复制成功也不等于研究完成。',drift:'same 仅表示捕获元数据匹配，不代表当前执行权限或研究完成；changed 表示历史绑定漂移，不是记录损坏。not-recorded 表示旧规划未保存工作流快照。',history:'仅检测本控制器曾观察的合成队列配置、完整回执前缀、cursor 回退和终态改写；新控制器不能证明此前未见的变化。',report:'仅手选论文完整已保存结果与其限定队列引用；不包含未选论文内容、模板提示词、原始模型回复、原文/PDF 或草稿。'};
+ const base={status:projectId?'available':'project-required',namespace,projectId,project:null,members:[],planningQueue:{status:'project-required',revision:null,entries:[],history:[]},syntheticQueue:{status:'project-required',queues:[]},coverage,authority:'none',researchCompletionEstablished:false,realExecutionConnected:false};
+ if(!projectId)return freezeProgress(base);
+ const revision=project?.revisions.at(-1);if(!revision)fail('PROJECT_RESULTS_PROJECT_UNAVAILABLE');
+ const memberIds=new Set(members.map(m=>m.id)),rowIds=new Set(rows.map(r=>r.paperId));
+ const flags=id=>({member:memberIds.has(id),openable:memberIds.has(id)&&rowIds.has(id)});
+ const planning=queues?.projects.find(p=>p.projectId===projectId),latest=planning?.revisions.at(-1),meta=r=>({id:r.id,version:r.version,time:r.time,sha256:r.sha256,previousSha256:r.previousSha256});
+ const planningQueue={status:sources.queue,revision:latest?meta(latest):null,history:planning?.revisions.map(meta)??[],entries:latest?.entries.map(({workflowRaw,...e},index)=>{
+  const row=rows.find(r=>r.paperId===e.paperId),linked=flags(e.paperId).openable,planned=workflowRaw===null?null:JSON.parse(workflowRaw),current=row?.workflows?.find(w=>w.kind==='shared-workflow'),plannedGraph=planned?.state.graphs.find(g=>g.version===planned.state.currentVersion);
+  return {...e,position:index+1,...flags(e.paperId),paperSnapshotStatus:linked?(row?.plan?.sourceStatus??'unavailable'):'unavailable',plannedWorkflowSha256:planned?.sha256??null,graphSha256:plannedGraph?.sha256??null,currentWorkflowSha256:linked?(current?.workflowSha256??null):null,workflowSnapshotStatus:!linked?'unavailable':!planned?'not-recorded':!current?.workflowSha256?'unavailable':planned.sha256===current.workflowSha256?'same':'changed'};
+ })??[]};
+ const syntheticQueue={status:sources.instances==='available'?(['prism-research-instances/v2','prism-research-instances/v3'].includes(instances?.schema)?'available':'not-recorded'):sources.instances,queues:(instances?.queueState?.queues??[]).filter(q=>q.projectId===projectId).map(q=>({...clone(q),activeAtCapture:instances.queueState.activeQueueId===q.id,synthetic:true,entries:q.entries.map((e,index)=>{
+  const i=instances.instances.find(i=>i.id===e.instanceId),row=rows.find(r=>r.paperId===i?.sourcePaperId),linked=flags(i?.sourcePaperId).openable,workflow=row?.workflows?.find(w=>w.kind==='instance'&&w.id===e.instanceId);
+  return {...e,position:index+1,paperId:i?.sourcePaperId??null,...flags(i?.sourcePaperId),projectRevisionSha256:i?.projectRevisionSha256??null,projectRevisionStatus:!i?.projectRevisionSha256?'unavailable':i.projectRevisionSha256===revision.sha256?'same':'changed',sourceSnapshotStatus:linked?(workflow?.sourceStatus??'unavailable'):'unavailable'};
+ }),receipts:q.receipts.map((r,index)=>{const i=instances.instances.find(i=>i.id===r.instanceId),raw=i?.versions?.at(-1),current=raw?JSON.parse(raw).sha256:null;return {...r,position:index+1,paperId:i?.sourcePaperId??null,synthetic:true,receiptWorkflowStatus:!current?'unavailable':current===r.workflowSha256?'same':'changed'};})}))};
+ return freezeProgress({...base,project:{title:revision.title,goal:revision.goal,revision:{id:revision.id,seq:revision.seq,time:revision.time,sha256:revision.sha256,previousSha256:revision.previousSha256},templateVersion:revision.templateVersion},members:members.map(m=>({paperId:m.id,title:rows.find(r=>r.paperId===m.id)?.title??m.title??'',openable:rowIds.has(m.id),planningPosition:planningQueue.entries.find(e=>e.paperId===m.id)?.position??null,counts:(()=>{const row=rows.find(r=>r.paperId===m.id);return {findings:row?.findings?.status==='available'?row.findings.count:null,evidence:row?.evidence?.status==='available'?row.evidence.claimCount:null,reviews:row?.reviews?.status==='available'?row.reviews.count:null,terminalReviews:row?.terminalReviewCount??null,approvals:row?.approvalCount??null,copies:row?.copyCount??null,findingEvidence:row?.findingEvidenceCount??null};})()})),planningQueue,syntheticQueue});
+}
+export function createProjectResultsView({detail,paperDetails,openPaper,stable,checkCurrent=stable,crypto=globalThis.crypto}){
+ let invalid=false,epoch=0,pending=false,issued=null,attempts=0;
+ function current(guard=()=>true){try{if(invalid||typeof guard!=='function')throw Error();stable();checkCurrent();if(guard()!==true)throw Error();stable();}catch{invalid=true;issued=null;epoch++;fail('PROJECT_RESULTS_CONTEXT_CHANGED');}}
+ async function digest(text){current();try{const result=await sha256(text,crypto);current();return result;}catch(e){invalid=true;issued=null;epoch++;throw Error('PROJECT_RESULTS_CONTEXT_CHANGED',{cause:e});}}
+ function selection(ids){if(detail.status!=='available'||!Array.isArray(ids)||ids.length<1||ids.length>20||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!detail.members.some(m=>m.paperId===id&&m.openable)||!paperDetails.has(id)))fail('PROJECT_RESULTS_SELECTION_INVALID');const selected=new Set(ids);return [...detail.planningQueue.entries.map(e=>e.paperId),...detail.members.map(m=>m.paperId)].filter((id,i,all)=>selected.has(id)&&all.indexOf(id)===i);}
+ async function prepareReport(paperIds){
+  current();const ids=selection(paperIds);if(pending)fail('PROJECT_RESULTS_REPORT_BUSY');if(attempts>=16)fail('PROJECT_RESULTS_REPORT_LIMIT');attempts++;pending=true;issued=null;const ownEpoch=++epoch;
+  try{
+   const selected=new Set(ids),context={...detail,members:detail.members.filter(m=>selected.has(m.paperId)),planningQueue:{...detail.planningQueue,entries:detail.planningQueue.entries.filter(e=>selected.has(e.paperId))},syntheticQueue:{...detail.syntheticQueue,queues:detail.syntheticQueue.queues.map(q=>({...q,entries:q.entries.filter(e=>selected.has(e.paperId)),receipts:q.receipts.filter(r=>selected.has(r.paperId))})).filter(q=>q.entries.length)},selection:ids,queueContext:'队列条目/回执仅为所选论文的引用子集，原始 position/cursor 不重新编号；不是完整队列。'};
+   const json=JSON.stringify(context,null,2);let longest=2;for(const m of json.matchAll(/`+/g))longest=Math.max(longest,m[0].length);const fence='`'.repeat(longest+1);
+   const parts=[`# 项目已保存结果批量报告\n\n只读快照；不表示研究完成或执行授权。\n\n${fence}\n${json}\n${fence}\n`];let size=bytes(parts[0]);if(size>PAPER_RESULTS_REPORT_LIMIT)fail('PROJECT_RESULTS_REPORT_TOO_LARGE');
+   for(const id of ids){current();const body=formatPaperResultsReport(paperDetails.get(id));size+=body.bytes;if(size>PAPER_RESULTS_REPORT_LIMIT)fail('PROJECT_RESULTS_REPORT_TOO_LARGE');parts.push(body.markdown);}
+   const markdown=parts.join(''),hash=await digest(markdown);current();if(epoch!==ownEpoch)fail('PROJECT_RESULTS_REPORT_EXPIRED');const preview=freezeProgress({kind:'project-results-report',namespace:detail.namespace,projectId:detail.projectId,paperIds:ids,markdown,bytes:size,sha256:hash});issued={preview,epoch:ownEpoch,used:false};return preview;
+  }finally{pending=false;}
+ }
+ async function validateReport(preview,approval={},guard=()=>true){const token=issued;if(!token||token.preview!==preview||token.used||token.epoch!==epoch||approval.explicit!==true||approval.sha256!==preview.sha256)fail('PROJECT_RESULTS_CONFIRMATION_REQUIRED');current(guard);token.used=true;const hash=await digest(preview.markdown);current(guard);if(issued!==token||epoch!==token.epoch||hash!==preview.sha256||bytes(preview.markdown)!==preview.bytes||preview.bytes>PAPER_RESULTS_REPORT_LIMIT)fail('PROJECT_RESULTS_REPORT_EXPIRED');return preview.markdown;}
+ function invalidateReport(preview){if(preview===undefined||issued?.preview===preview){issued=null;epoch++;}}
+ current();return Object.freeze({detail,stable:()=>current(),checkCurrent:()=>current(),openPaper(id){current();selection([id]);return openPaper(id);},prepareReport,validateReport,invalidateReport});
+}

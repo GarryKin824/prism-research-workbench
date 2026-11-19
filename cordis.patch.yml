@@ -1,0 +1,4 @@
+- insert:
+    - id: prism-local-workbench
+      name: prism-local-workbench
+      disabled: true

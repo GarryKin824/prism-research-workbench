@@ -1,0 +1,7 @@
+{
+  "dshEntry": "<absolute path to installed official DSH bin.js>",
+  "isolatedHome": "<absolute path to a dedicated DSH home>",
+  "packagePath": "prism-local-workbench-0.2.0-preview.1.tgz",
+  "port": 33833,
+  "proxyPort": null
+}

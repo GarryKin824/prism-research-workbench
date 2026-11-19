@@ -1,0 +1,22 @@
+- id: prism-local-workbench
+  name: prism-local-workbench
+  disabled: false
+  config:
+    storageNamespace: 'f0bd237d-757c-4b5b-93d7-a0b51f1a3e18'
+    accountModel:
+      origin: 'http://127.0.0.1:33833'
+      journal: '<absolute path to a dedicated local receipt directory>'
+    # Optional; keep this private directory outside the installed package.
+    # workspaceRecovery:
+    #   origin: 'http://127.0.0.1:33833'
+    #   directory: '<absolute path to a dedicated workspace recovery directory>'
+    # Optional; expose one explicitly chosen, digest-pinned PDF to the local owner.
+    # localReferencePdf:
+    #   origin: 'http://127.0.0.1:33833'
+    #   filename: '<absolute path to a trusted reference PDF>'
+    #   sha256: '<lowercase SHA-256 of that PDF>'
+    # Optional; uncomment only for an independently signed-in Codex environment.
+    # codexExecution:
+    #   executable: '<absolute path to official codex.exe>'
+    #   home: '<absolute path to dedicated Codex execution home>'
+    #   includedOnly: true

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Fixed static rich-text rendering modules; no CDN or runtime network dependency.",
+  "retrievedAtUtc": "2026-11-11T04:03:31.792052+00:00",
+  "verification": "Archives compared with SHA512 integrity and SHA1 in exact-version metadata from the same official npm registry. This checks transfer/content integrity, not an independently verified signature; registry signatures/attestations were not independently verified. No install scripts run. Only explicit regular-file allowlist copied after path/link/duplicate-member checks.",
+  "rendering": "KaTeX must use output: mathml, with trust: false and bounded input. This output needs no KaTeX CSS or font files. marked renders Markdown but does not sanitize HTML; downstream safe rendering is required.",
+  "packages": [
+    {
+      "name": "katex",
+      "version": "0.19.1",
+      "license": "MIT",
+      "metadataUrl": "https://registry.npmjs.org/katex/0.19.1",
+      "archiveUrl": "https://registry.npmjs.org/katex/-/katex-0.19.1.tgz",
+      "archiveBytes": 1499956,
+      "archiveSha256": "24da5a599eb2fcede2e270b99a6ff48bca816beecc95feeb84e8cccbd1bb34fd",
+      "verifiedArchiveSha512Integrity": "sha512-jG8uKntjSEcm2EpQOh0XturpPuuC9r3Sq5HLHdsFdWZT27E672SF19QEi+of0/YeOy15lDgRhKvr5614uRrEfA==",
+      "verifiedArchiveSha1": "ba2685811cdbffc54dfb7d55bd440c6cc6bb8795",
+      "files": [
+        {
+          "path": "third-party/rich-text/katex/katex.mjs",
+          "archiveMember": "package/dist/katex.mjs",
+          "bytes": 603305,
+          "sha256": "5f0c3749f8b28ce1a63b68de34d3950bb4aa1a9e0130865e4b09ecc9a250c8b7"
+        },
+        {
+          "path": "third-party/rich-text/katex/LICENSE",
+          "archiveMember": "package/LICENSE",
+          "bytes": 1107,
+          "sha256": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3"
+        },
+        {
+          "path": "third-party/rich-text/katex/package.json",
+          "archiveMember": "package/package.json",
+          "bytes": 7282,
+          "sha256": "b4f886cca569791ed1c44ccc02e40885163fe53d45251b00f0a5b584b925b9e6"
+        }
+      ],
+      "packageDeclaredDependencies": {
+        "commander": "^15.0.0"
+      }
+    },
+    {
+      "name": "marked",
+      "version": "17.0.5",
+      "license": "MIT",
+      "metadataUrl": "https://registry.npmjs.org/marked/17.0.5",
+      "archiveUrl": "https://registry.npmjs.org/marked/-/marked-17.0.5.tgz",
+      "archiveBytes": 110084,
+      "archiveSha256": "1aebca0400d160cb1bedca2e271daad0e324503b7e0d0b4b23781ca3293bacce",
+      "verifiedArchiveSha512Integrity": "sha512-6hLvc0/JEbRjRgzI6wnT2P1XuM1/RrrDEX0kPt0N7jGm1133g6X7DlxFasUIx+72aKAr904GTxhSLDrd5DIlZg==",
+      "verifiedArchiveSha1": "8fc6878a439463a007b05d346d2ad50a87ec3f0e",
+      "files": [
+        {
+          "path": "third-party/rich-text/marked/marked.esm.js",
+          "archiveMember": "package/lib/marked.esm.js",
+          "bytes": 41661,
+          "sha256": "0b4487359ce6b85108708e7a532e1242a27f4718241e7b2de109ac6cd307d2dc"
+        },
+        {
+          "path": "third-party/rich-text/marked/LICENSE.md",
+          "archiveMember": "package/LICENSE.md",
+          "bytes": 2942,
+          "sha256": "8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c"
+        },
+        {
+          "path": "third-party/rich-text/marked/package.json",
+          "archiveMember": "package/package.json",
+          "bytes": 3396,
+          "sha256": "b0f610de98f9df7f779bc101af02209f20939dd232dc47af59d3df3162a04fc5"
+        }
+      ],
+      "packageDeclaredDependencies": {},
+      "matchesPreinstalledMarkedEsm": true
+    }
+  ],
+  "verificationTests": {
+    "nodeEsmImport": "passed for both vendored modules",
+    "katexMathmlRender": "fraction and square root rendered as native MathML without HTML layout output",
+    "markedParse": "bold Markdown parsed successfully",
+    "runtimeDependencies": "Selected ESM distributions are standalone. KaTeX package-declared commander dependency is for CLI, not the selected renderer; no npm installation required."
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "pdfjsVersion": "6.3.289",
+  "esbuildVersion": "0.25.12",
+  "inputModulePath": "../vendor/worker-source.mjs",
+  "inputModuleSha256": "f64c05ffaa29d0eb8426bbc3a198a9eb3e6686fc88640aae7691b094915524d8",
+  "decodedInputSha256": "8f38cb786ca9e481d32735050b9f98195974a40551e8a0953061821c2755a659",
+  "inputModified": false,
+  "outputSha256": "e5f4a16e1fba485347103fbaf224cd111cde6bf6f26eda963cb4df254b8dc86c",
+  "format": "iife",
+  "target": "es2022",
+  "platform": "browser",
+  "officialOriginalBytes": false,
+  "buildWarnings": [
+    {
+      "id": "empty-import-meta",
+      "text": "\"import.meta\" is not available with the \"iife\" output format and will be empty",
+      "line": 29
+    },
+    {
+      "id": "empty-import-meta",
+      "text": "\"import.meta\" is not available with the \"iife\" output format and will be empty",
+      "line": 32
+    }
+  ],
+  "optionalDynamicImportOccurrences": 1,
+  "evalCalls": false,
+  "newFunctionCalls": false,
+  "scriptHash": "eEkwbOp1PH3no5eJAnW16r7TrN89P6/WOvwnswcVwUw=",
+  "browserStatus": "NOT_RUN"
+}

@@ -1,0 +1,26 @@
+import {sha256} from './custom-core.mjs';
+export const FINDING_EVIDENCE_LIMIT=4000000;
+const exact=(x,k)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).sort().join(',')===k.split(',').sort().join(','),id=x=>typeof x==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(x),hash=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x),clone=x=>JSON.parse(JSON.stringify(x)),fail=()=>{throw Error('FINDING_EVIDENCE_INVALID')};
+export function emptyFindingEvidence(namespace){return {schema:'prism-finding-evidence/v1',namespace,authority:'none',records:[]};}
+export async function validateFindingEvidence(s,crypto=globalThis.crypto){
+ if(!exact(s,'schema,namespace,authority,records')||s.schema!=='prism-finding-evidence/v1'||typeof s.namespace!=='string'||!s.namespace||s.namespace.length>300||s.authority!=='none'||!Array.isArray(s.records)||s.records.length>200)fail();
+ const heads=new Map(),ids=new Set();let previous=null;
+ for(const [index,r]of s.records.entries()){
+  if(!exact(r,'id,seq,time,previousSha256,evidenceId,version,previousEvidenceSha256,scope,status,documentSha256,paperSnapshotSha256,quote,locator,note,sha256')||!id(r.id)||ids.has(r.id)||!id(r.evidenceId)||r.seq!==index+1||typeof r.time!=='string'||!Number.isFinite(Date.parse(r.time))||new Date(r.time).toISOString()!==r.time||r.previousSha256!==previous||!['active','withdrawn'].includes(r.status)||!hash(r.documentSha256)||!hash(r.paperSnapshotSha256)||!hash(r.sha256))fail();
+  const q=r.scope;if(!exact(q,'namespace,projectId,paperId,findingId,findingSha256')||q.namespace!==s.namespace||!(q.projectId===''||id(q.projectId))||!id(q.paperId)||!id(q.findingId)||!hash(q.findingSha256))fail();
+  for(const [key,max]of [['quote',6000],['locator',1000],['note',6000]])if(typeof r[key]!=='string'||r[key].length>max||key==='quote'&&!r[key].trim())fail();
+  const old=heads.get(r.evidenceId);if(r.version!==(old?.version??0)+1||r.previousEvidenceSha256!==(old?.sha256??null)||!old&&r.status!=='active'||old&&(old.status==='withdrawn'||JSON.stringify(old.scope)!==JSON.stringify(q)))fail();
+  if(old&&r.status==='withdrawn'&&['quote','locator','documentSha256','paperSnapshotSha256'].some(k=>r[k]!==old[k]))fail();
+  const {sha256:d,...body}=r;if(await sha256(JSON.stringify(body),crypto)!==d)fail();heads.set(r.evidenceId,r);ids.add(r.id);previous=d;
+ }return true;
+}
+export async function exportFindingEvidence(input,crypto=globalThis.crypto){const state=clone(input);await validateFindingEvidence(state,crypto);const raw=JSON.stringify({schema:'prism-finding-evidence-backup/v1',state,sha256:await sha256(JSON.stringify(state),crypto)});if(raw.length>FINDING_EVIDENCE_LIMIT||new TextEncoder().encode(raw).length>FINDING_EVIDENCE_LIMIT)throw Error('FINDING_EVIDENCE_LIMIT');return raw;}
+export async function loadFindingEvidence(raw,namespace,crypto=globalThis.crypto){if(typeof raw!=='string'||raw.length>FINDING_EVIDENCE_LIMIT||new TextEncoder().encode(raw).length>FINDING_EVIDENCE_LIMIT)throw Error('FINDING_EVIDENCE_LIMIT');const x=JSON.parse(raw);if(!exact(x,'schema,state,sha256')||x.schema!=='prism-finding-evidence-backup/v1'||x.state?.namespace!==namespace||x.sha256!==await sha256(JSON.stringify(x.state),crypto))fail();await validateFindingEvidence(x.state,crypto);return x.state;}
+export async function appendFindingEvidence(input,fields,crypto=globalThis.crypto){const s=clone(input);await validateFindingEvidence(s,crypto);const old=s.records.filter(r=>r.evidenceId===fields.evidenceId).at(-1);const body={id:crypto.randomUUID(),seq:s.records.length+1,time:new Date().toISOString(),previousSha256:s.records.at(-1)?.sha256??null,...clone(fields),version:(old?.version??0)+1,previousEvidenceSha256:old?.sha256??null};s.records.push({...body,sha256:await sha256(JSON.stringify(body),crypto)});await exportFindingEvidence(s,crypto);return s;}
+export function findingEvidenceView(state,{projectId,paperId,documentSha256=null,paperSnapshotSha256=null}={}){const heads=new Map(state.records.map(r=>[r.evidenceId,r.sha256]));return state.records.filter(r=>r.scope.projectId===projectId&&r.scope.paperId===paperId).map(r=>({...clone(r),isHead:heads.get(r.evidenceId)===r.sha256,sourceStatus:!documentSha256?'unavailable':documentSha256!==r.documentSha256||paperSnapshotSha256!==r.paperSnapshotSha256?'changed':'same',authority:'none',supportEstablished:false}));}
+export function createFindingEvidenceProjection({state,status,namespace,projectId,paperId,findings=[],source={}}){
+ const base={status,count:null,activeCount:null,items:[],authority:'none',supportEstablished:false,originalsIncluded:false,coverage:'独立的人工摘录逐字引用账本；保留更正/撤回历史，不迁移共享证据主张。逐字匹配不证明结论得到支持，不建立批准。哈希不是身份认证，新读取者不能证明此前未见历史回退。'};
+ if(status!=='available'||!state)return base;
+ const items=findingEvidenceView(state,{projectId,paperId,documentSha256:source.documentStatus==='same'&&source.documentSha256===source.declaredDocumentSha256?source.documentSha256:null,paperSnapshotSha256:source.snapshotSha256}).filter(r=>r.scope.namespace===namespace).map(r=>({...r,findingStatus:Array.isArray(findings)&&findings.some(f=>f.id===r.scope.findingId&&f.sha256===r.scope.findingSha256&&f.reference.origin.projectId===projectId&&f.reference.targetSource.paperId===paperId)?'same':'unavailable'}));
+ return {...base,count:items.length,activeCount:items.filter(r=>r.isHead&&r.status==='active').length,items};
+}

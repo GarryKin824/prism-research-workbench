@@ -1,0 +1,32 @@
+{
+  "scope": "Pinned third-party inputs and licenses; generated hashes are separately reported by the reproducible build",
+  "pdfjsVersion": "6.3.289",
+  "fontVersion": "LiberationSans1.07.4",
+  "fontSourceSHA256": "ad98b7498dc2992f7f0868f79b65ce4a720a3acdb63ab3f1f1cb6881117a5406",
+  "fontSourceRebuiltBitForBit": false,
+  "fontSourceOrigin": "https://deb.debian.org/debian/pool/main/f/fonts-liberation/fonts-liberation_1.07.4.orig.tar.gz",
+  "files": {
+    "src/pdf-intake/licenses/PDFJS-LICENSE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "src/pdf-intake/licenses/cmaps-LICENSE": "aa92ab5a472974865a96fd4a4e9c13bb41bf6fe1b309cb6b8da48bc9e19839a2",
+    "src/pdf-intake/licenses/pdfjs-Apache-2.0.txt": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "src/pdf-intake/licenses/standard_fonts-LICENSE_FOXIT": "b578cdd2345840ada550bd12519533812320d5f1d21cf4c1c7e1b1b0a31c98b7",
+    "src/pdf-intake/licenses/standard_fonts-LICENSE_LIBERATION": "d2c4d5b3e115a519cb58eb691aa64538397e2611f9ebe801392cf9667997e7dc",
+    "third-party/pdf-intake-original-lock.json": "226a76166e17bd022da5638cd55f405c844387d3aecc52ab565776dd317616e8",
+    "third-party/pdf-worker-original-derivation.json": "28025682d0c018c6709bc5a58d89010e12aa100d1f9a394e1746b5dac1be7dca",
+    "third-party/sources/debian-fonts-liberation_1.07.4.orig.tar.gz": "ad98b7498dc2992f7f0868f79b65ce4a720a3acdb63ab3f1f1cb6881117a5406",
+    "src/pdf-intake/vendor/pdf.mjs": "495588717f62303a839e91a5343deebf1b41f52e2f9f6361e73dee6ea6a4355e",
+    "src/pdf-intake/vendor/binary-assets.mjs": "da0b2f252da20833ec19cda8990a8a0cd64bb8bbd948180d4dd16715d2a087ab",
+    "src/pdf-intake/vendor/worker-input-source.mjs": "f64c05ffaa29d0eb8426bbc3a198a9eb3e6686fc88640aae7691b094915524d8",
+    "third-party/rich-text/katex/katex.mjs": "5f0c3749f8b28ce1a63b68de34d3950bb4aa1a9e0130865e4b09ecc9a250c8b7",
+    "third-party/rich-text/katex/LICENSE": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3",
+    "third-party/rich-text/katex/package.json": "b4f886cca569791ed1c44ccc02e40885163fe53d45251b00f0a5b584b925b9e6",
+    "third-party/rich-text/marked/marked.esm.js": "0b4487359ce6b85108708e7a532e1242a27f4718241e7b2de109ac6cd307d2dc",
+    "third-party/rich-text/marked/LICENSE.md": "8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c",
+    "third-party/rich-text/marked/package.json": "b0f610de98f9df7f779bc101af02209f20939dd232dc47af59d3df3162a04fc5",
+    "THIRD-PARTY-RICH-TEXT-MANIFEST.json": "21f2e274bc4dcf0b555ae18934809c9b32a42f3791c961480685a864bfa0b34f"
+  },
+  "richTextVersions": {
+    "katex": "0.19.1",
+    "marked": "17.0.5"
+  }
+}

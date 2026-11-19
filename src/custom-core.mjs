@@ -1,0 +1,122 @@
+import {checkPdfTextIndex} from './pdf-intake/policy.mjs';
+// Pure, local synthetic workflow engine. No network, filesystem, tools, or provider dispatch.
+const clone=x=>JSON.parse(JSON.stringify(x));
+const freeze=x=>{if(x&&typeof x==='object'){Object.freeze(x);for(const v of Object.values(x))freeze(v)}return x};
+const fail=c=>{throw Error(c)};
+const keys=(x,k)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).sort().join('|')===k.split(',').sort().join('|');
+const str=(x,n,empty=false)=>typeof x==='string'&&x.length<=n&&(empty||x.trim().length>0)&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x);
+const id=x=>str(x,100)&&!['constructor','prototype','__proto__'].includes(x)&&/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/.test(x);
+const hash=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
+const integer=(x,min,max)=>Number.isSafeInteger(x)&&x>=min&&x<=max;
+const now=()=>new Date().toISOString();
+const date=x=>str(x,40)&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(x)&&Number.isFinite(Date.parse(x));
+export async function sha256(value,crypto=globalThis.crypto){if(!crypto?.subtle)fail('CRYPTO_UNAVAILABLE');const d=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)));if(d.length!==32)fail('INVALID_DIGEST');return Array.from(d,b=>b.toString(16).padStart(2,'0')).join('')}
+const uid=crypto=>{if(!crypto?.randomUUID)fail('CRYPTO_UNAVAILABLE');return crypto.randomUUID()};
+export const DEFAULT_POLICY=freeze({mode:'manual',checkpoints:[],maxRuns:40,maxReworks:2,allowSynthetic:false,libraryAdvance:'manual',completion:{nodeIds:['analysis'],reviewIds:['review']}});
+export function defaultNodes(){return [{id:'source',name:'资料检查',kind:'work',prompt:'核对研究问题和数据来源。',dependsOn:[],reviewTarget:null},{id:'analysis',name:'合成分析',kind:'work',prompt:'使用明确标注的合成材料演示分析。',dependsOn:['source'],reviewTarget:null},{id:'review',name:'审核',kind:'review',prompt:'审核指定合成结果，记录限制。',dependsOn:['analysis'],reviewTarget:'analysis'}]}
+function validateSource(s){if(s===null)return;if(!keys(s,'namespace,paperId,paperTitle,documentSha256,sourceArchiveSha256')||!str(s.namespace,300)||!id(s.paperId)||!str(s.paperTitle,500)||!hash(s.sourceArchiveSha256)||!(s.documentSha256===null||hash(s.documentSha256)))fail('INVALID_SOURCE')}
+async function validateLegacy(legacy,source,crypto,envelopeError='LEGACY_HASH_MISMATCH'){
+ if(legacy===null)return;
+ if(!keys(legacy,'snapshot,sha256')||!hash(legacy.sha256)||await sha256(JSON.stringify(legacy.snapshot),crypto)!==legacy.sha256)fail(envelopeError);
+ // Generic synthetic snapshots have no paper binding. A bound snapshot is historical,
+ // not a requirement that the current paper's later events or runs remain identical.
+ if(source===null)return;
+ if(source.sourceArchiveSha256!==legacy.sha256)fail('LEGACY_SOURCE_MISMATCH');
+ const paper=legacy.snapshot;
+ if(!paper||typeof paper!=='object'||Array.isArray(paper)||!Object.hasOwn(paper,'id')||!Object.hasOwn(paper,'title')||paper.id!==source.paperId||paper.title!==source.paperTitle)fail('LEGACY_SOURCE_BINDING_MISMATCH');
+ if(!Object.hasOwn(paper,'document')){if(source.documentSha256!==null)fail('LEGACY_SOURCE_BINDING_MISMATCH');return}
+ const d=paper.document;
+ // Older migration callers supplied text/hash alone. Preserve these snapshots without
+ // inventing metadata; when present, metadata follows the retained store document rules.
+ // Hashes establish internal consistency, never source authenticity or authority.
+ if(!d||typeof d!=='object'||Array.isArray(d)||!Object.hasOwn(d,'text')||!Object.hasOwn(d,'sha256')||Object.keys(d).some(k=>!['text','filename','mime','byteLength','sha256','pdfText'].includes(k)))fail('INVALID_LEGACY_DOCUMENT');
+ if(Object.hasOwn(d,'filename')&&(!str(d.filename,255)||/[\\/\x00-\x1f\x7f]/.test(d.filename)||!(/\.(txt|md)$/i).test(d.filename))||Object.hasOwn(d,'mime')&&(!['text/plain','text/markdown'].includes(d.mime)||(/\.txt$/i).test(d.filename)&&d.mime!=='text/plain'))fail('INVALID_LEGACY_DOCUMENT_METADATA');
+ if(!str(d.text,200000)||/\x7f/.test(d.text)||/^\ufeff?%PDF-/i.test(d.text))fail('INVALID_LEGACY_DOCUMENT_TEXT');
+ for(let i=0;i<d.text.length;i++){const ch=d.text.charCodeAt(i);if(ch>=0xd800&&ch<=0xdbff){const next=d.text.charCodeAt(++i);if(!(next>=0xdc00&&next<=0xdfff))fail('INVALID_LEGACY_DOCUMENT_TEXT')}else if(ch>=0xdc00&&ch<=0xdfff)fail('INVALID_LEGACY_DOCUMENT_TEXT')}
+ const byteLength=new TextEncoder().encode(d.text).length;
+ if(byteLength>512*1024)fail('LEGACY_DOCUMENT_TOO_LARGE');
+ if(Object.hasOwn(d,'byteLength')&&(!integer(d.byteLength,0,512*1024)||d.byteLength!==byteLength))fail('INVALID_LEGACY_DOCUMENT_METADATA');
+ if(!hash(d.sha256)||await sha256(d.text,crypto)!==d.sha256)fail('LEGACY_DOCUMENT_HASH_MISMATCH');
+ if(d.sha256!==source.documentSha256)fail('LEGACY_SOURCE_BINDING_MISMATCH');
+ if(d.pdfText!==undefined)checkPdfTextIndex(d.text,d.pdfText);
+}
+function validatePolicy(p,nodes){if(!keys(p,'mode,checkpoints,maxRuns,maxReworks,allowSynthetic,libraryAdvance,completion')||!['manual','auto','checkpoints'].includes(p.mode)||!Array.isArray(p.checkpoints)||p.checkpoints.length>30||new Set(p.checkpoints).size!==p.checkpoints.length||p.checkpoints.some(x=>!nodes.some(n=>n.id===x))||!integer(p.maxRuns,1,500)||!integer(p.maxReworks,0,10)||typeof p.allowSynthetic!=='boolean'||p.libraryAdvance!=='manual'||!keys(p.completion,'nodeIds,reviewIds')||!Array.isArray(p.completion.nodeIds)||!Array.isArray(p.completion.reviewIds)||p.completion.nodeIds.length<1||p.completion.reviewIds.length<1||p.completion.nodeIds.length>30||p.completion.reviewIds.length>30||new Set(p.completion.nodeIds).size!==p.completion.nodeIds.length||new Set(p.completion.reviewIds).size!==p.completion.reviewIds.length||p.completion.nodeIds.some(x=>!nodes.some(n=>n.id===x))||p.completion.reviewIds.some(x=>!nodes.some(n=>n.id===x&&n.kind==='review')))fail('INVALID_POLICY')}
+function validateNodes(nodes,versioned=true){
+ if(!Array.isArray(nodes)||nodes.length<1)fail('INVALID_NODES');const seen=new Map();
+ for(const n of nodes){if(!keys(n,versioned?'id,name,kind,prompt,promptVersion,dependsOn,reviewTarget':'id,name,kind,prompt,dependsOn,reviewTarget')||!id(n.id)||seen.has(n.id)||!str(n.name,100)||!['work','review'].includes(n.kind)||!str(n.prompt,16000)||(versioned&&!integer(n.promptVersion,1,10000))||!Array.isArray(n.dependsOn)||n.dependsOn.length>29||new Set(n.dependsOn).size!==n.dependsOn.length||n.dependsOn.some(x=>!id(x)||x===n.id))fail('INVALID_NODE');seen.set(n.id,n)}
+ for(const n of nodes){if(n.dependsOn.some(x=>!seen.has(x)))fail('MISSING_DEPENDENCY');if(n.kind==='work'?n.reviewTarget!==null:(!id(n.reviewTarget)||!n.dependsOn.includes(n.reviewTarget)||seen.get(n.reviewTarget)?.kind!=='work'))fail('INVALID_REVIEW_TARGET')}
+ const active=new Set(),done=new Set();function visit(x){if(active.has(x))fail('DEPENDENCY_CYCLE');if(done.has(x))return;active.add(x);for(const d of seen.get(x).dependsOn)visit(d);active.delete(x);done.add(x)}for(const n of nodes)visit(n.id);
+}
+function assertExportBudget(s){
+ const envelope=state=>JSON.stringify({schema:'prism-custom-workflow-backup/v1',notice:'仅本地合成演示，非真实执行或科学审核。回导清除授权并暂停，不自动恢复运行。',state,sha256:'0'.repeat(64)},null,2);
+ const restored=clone(s);restored.syntheticAuthorized=false;restored.approvals=[];restored.pause={code:'RESTORED_REQUIRES_CONFIRMATION',nodeId:null};for(const r of restored.runs)if(r.status==='running'){r.status='interrupted';r.endedAt='2000-01-01T00:00:00.000Z'}
+ if([s,restored].some(x=>new TextEncoder().encode(envelope(x)).length>4000000))fail('EXPORT_TOO_LARGE');
+}
+function safeResult(s){assertExportBudget(s);return freeze(s)}
+
+const currentGraph=s=>s.graphs.find(g=>g.version===s.currentVersion);
+const activeRun=s=>s.runs.find(r=>r.status==='running');
+function runFor(s,nodeId){const rid=s.currentRuns[nodeId];return s.runs.find(r=>r.id===rid&&r.status==='completed'&&(r.verdict===null||r.verdict==='pass'))}
+function dependencies(s,n){return n.dependsOn.map(nodeId=>{const r=runFor(s,nodeId);if(!r)fail('UPSTREAM_REQUIRED');return {nodeId,runId:r.id,artifactSha256:r.artifact.sha256}})}
+function token(s,n){return JSON.stringify({graphSha256:currentGraph(s).sha256,nodeId:n.id,upstream:dependencies(s,n)})}
+function invalidate(s,nodeId){const nodes=currentGraph(s).nodes,removed=new Set([nodeId]);let changed=true;while(changed){changed=false;for(const n of nodes)if(!removed.has(n.id)&&n.dependsOn.some(x=>removed.has(x))){removed.add(n.id);changed=true}}for(const x of removed)delete s.currentRuns[x];s.approvals=s.approvals.filter(a=>!removed.has(a.nodeId))}
+async function graphRecord(version,nodes,policy,crypto){const p={version,nodes,policy};return {...p,sha256:await sha256(JSON.stringify(p),crypto)}}
+export async function createWorkflow({nodes=defaultNodes(),policy=DEFAULT_POLICY,source=null,legacy=null}={},crypto=globalThis.crypto){validateNodes(nodes,false);validatePolicy(policy,nodes);validateSource(source);safeTree(legacy);await validateLegacy(legacy,source,crypto,'INVALID_LEGACY');const v=nodes.map(n=>({...clone(n),promptVersion:1}));const g=await graphRecord(1,v,clone(policy),crypto);return safeResult({schema:'prism-custom-workflow/v1',execution:'synthetic-only',id:uid(crypto),createdAt:now(),syntheticAuthorized:policy.allowSynthetic,source:clone(source),legacy:clone(legacy),graphs:[g],currentVersion:1,runs:[],currentRuns:{},approvals:[],pause:null})}
+export async function editGraph(state,{nodes,policy=currentGraph(state).policy},crypto=globalThis.crypto){await validateWorkflow(state,crypto);if(activeRun(state))fail('ACTIVE_RUN_EDIT_LOCK');validateNodes(nodes,false);validatePolicy(policy,nodes);if(state.graphs.length>=100)fail('GRAPH_HISTORY_LIMIT');const prev=currentGraph(state),allIds=new Set(state.graphs.flatMap(g=>g.nodes.map(n=>n.id)));
+ for(const n of prev.nodes)if(!nodes.some(x=>x.id===n.id)&&state.runs.some(r=>r.nodeId===n.id||r.upstream.some(u=>u.nodeId===n.id)))fail('REFERENCED_NODE_DELETE');
+ const nextNodes=nodes.map(n=>{const old=prev.nodes.find(x=>x.id===n.id);if(!old&&allIds.has(n.id))fail('REUSED_NODE_ID');if(old&&old.kind!==n.kind)fail('NODE_KIND_IMMUTABLE');return {...clone(n),promptVersion:old?old.promptVersion+(old.prompt===n.prompt?0:1):1}});validateNodes(nextNodes);const s=clone(state),version=state.currentVersion+1;s.graphs.push(await graphRecord(version,nextNodes,clone(policy),crypto));s.currentVersion=version;s.syntheticAuthorized=policy.allowSynthetic;s.currentRuns={};s.approvals=[];s.pause=null;return safeResult(s)}
+export async function approveNode(state,nodeId,crypto=globalThis.crypto){await validateWorkflow(state,crypto);if(activeRun(state))fail('ACTIVE_RUN');const n=currentGraph(state).nodes.find(n=>n.id===nodeId);if(!n)fail('NODE_NOT_FOUND');if(runFor(state,nodeId))fail('NODE_ALREADY_COMPLETE');const t=token(state,n),s=clone(state);s.approvals=s.approvals.filter(a=>a.nodeId!==nodeId);s.approvals.push({nodeId,token:t});if(s.pause?.code==='HUMAN_CONFIRMATION_REQUIRED'&&s.pause.nodeId===nodeId)s.pause=null;return safeResult(s)}
+export async function resumeWorkflow(state,crypto=globalThis.crypto){await validateWorkflow(state,crypto);if(activeRun(state)&&state.pause?.code!=='TRANSITION_LIMIT')fail('ACTIVE_RUN');const s=clone(state);s.pause=null;return safeResult(s)}
+export async function startNext(state,crypto=globalThis.crypto){await validateWorkflow(state,crypto);if(activeRun(state))fail('ACTIVE_RUN');if(state.pause)return freeze(clone(state));const s=clone(state),g=currentGraph(s);const pause=(code,nodeId=null)=>{s.pause={code,nodeId};return safeResult(s)};if(g.policy.completion.nodeIds.every(x=>runFor(s,x))&&g.policy.completion.reviewIds.every(x=>runFor(s,x)?.verdict==='pass'))return pause('WORKFLOW_COMPLETE');
+ for(const n of g.nodes)if(n.kind==='review'&&s.runs.filter(r=>r.nodeId===n.id&&r.verdict==='revise').length>g.policy.maxReworks)return pause('REWORK_BUDGET_EXHAUSTED',n.id);
+ if(!g.policy.allowSynthetic||!s.syntheticAuthorized)return pause('SYNTHETIC_PERMISSION_REQUIRED');if(s.runs.length>=g.policy.maxRuns)return pause('RUN_BUDGET_EXHAUSTED');
+ const n=g.nodes.find(n=>!runFor(s,n.id)&&n.dependsOn.every(d=>runFor(s,d)));if(!n)return pause('NO_RUNNABLE_NODE');
+ if(n.kind==='review'&&s.runs.filter(r=>r.nodeId===n.id&&r.verdict==='revise').length>g.policy.maxReworks)return pause('REWORK_BUDGET_EXHAUSTED',n.id);
+ const gate=g.policy.mode==='manual'||g.policy.mode==='checkpoints'&&g.policy.checkpoints.includes(n.id);if(gate&&!s.approvals.some(a=>a.nodeId===n.id&&a.token===token(s,n)))return pause('HUMAN_CONFIRMATION_REQUIRED',n.id);
+ s.approvals=s.approvals.filter(a=>a.nodeId!==n.id);s.runs.push({id:uid(crypto),nodeId:n.id,graphVersion:g.version,graphSha256:g.sha256,promptVersion:n.promptVersion,prompt:n.prompt,sourceHash:await sha256(JSON.stringify(s.source),crypto),upstream:dependencies(s,n),status:'running',artifact:null,verdict:null,startedAt:now(),endedAt:null});return safeResult(s)}
+export async function finishSynthetic(state,runId,{reviewVerdict='pass',failWith=null}={},crypto=globalThis.crypto){await validateWorkflow(state,crypto);if(!['pass','revise'].includes(reviewVerdict)||failWith!==null&&!str(failWith,200))fail('INVALID_SYNTHETIC_OUTCOME');const s=clone(state),r=s.runs.find(r=>r.id===runId);if(!r||r.status!=='running')fail('RUN_NOT_ACTIVE');const g=currentGraph(s),n=g.nodes.find(n=>n.id===r.nodeId);if(r.graphVersion!==g.version)fail('STALE_RUN');r.endedAt=now();if(failWith!==null){r.status='failed';s.pause={code:'SYNTHETIC_EXCEPTION',nodeId:n.id};return safeResult(s)}
+ const text=`SYNTHETIC ONLY / NOT RESEARCH FINDINGS\nNode: ${n.id}\nGraph: ${g.version}\nPrompt version: ${n.promptVersion}\n${n.kind==='review'?'Synthetic verdict: '+reviewVerdict:'Generated local fixture; no paper analyzed, no provider called.'}`;r.artifact={text,sha256:await sha256(text,crypto)};r.status='completed';r.verdict=n.kind==='review'?reviewVerdict:null;s.currentRuns[n.id]=r.id;
+ if(r.verdict==='revise'){invalidate(s,n.reviewTarget);const used=s.runs.filter(x=>x.nodeId===n.id&&x.verdict==='revise').length;if(used>g.policy.maxReworks)s.pause={code:'REWORK_BUDGET_EXHAUSTED',nodeId:n.id}}
+ return safeResult(s)}
+export async function cancelActive(state,crypto=globalThis.crypto){await validateWorkflow(state,crypto);const s=clone(state),r=activeRun(s);if(!r)fail('NO_ACTIVE_RUN');r.status='cancelled';r.endedAt=now();s.pause={code:'USER_CANCELLED',nodeId:r.nodeId};return safeResult(s)}
+export async function advanceSynthetic(state,{maxTransitions=20,reviewVerdict='pass'}={},crypto=globalThis.crypto){if(!integer(maxTransitions,1,100))fail('INVALID_TRANSITION_LIMIT');let s=state;await validateWorkflow(s,crypto);for(let i=0;i<maxTransitions;i++){if(s.pause)return s;const running=activeRun(s);s=running?await finishSynthetic(s,running.id,{reviewVerdict},crypto):await startNext(s,crypto)}if(!s.pause){const c=clone(s);c.pause={code:'TRANSITION_LIMIT',nodeId:activeRun(c)?.nodeId??null};s=safeResult(c)}return s}
+export async function pauseWorkflow(state,crypto=globalThis.crypto){await validateWorkflow(state,crypto);const s=clone(state),r=activeRun(s);if(r){r.status='interrupted';r.endedAt=now()}s.pause={code:'USER_PAUSED',nodeId:r?.nodeId??null};return safeResult(s)}
+const pauseCodes=new Set(['HUMAN_CONFIRMATION_REQUIRED','SYNTHETIC_PERMISSION_REQUIRED','RUN_BUDGET_EXHAUSTED','REWORK_BUDGET_EXHAUSTED','WORKFLOW_COMPLETE','NO_RUNNABLE_NODE','SYNTHETIC_EXCEPTION','USER_CANCELLED','TRANSITION_LIMIT','USER_PAUSED','RESTORED_REQUIRES_CONFIRMATION']);
+function safeTree(value,depth=0){if(depth>40)fail('STATE_TOO_DEEP');if(value&&typeof value==='object'){for(const [k,v] of Object.entries(value)){if(['__proto__','constructor','prototype'].includes(k))fail('UNSAFE_KEY');safeTree(v,depth+1)}}else if(typeof value==='number'&&!Number.isFinite(value))fail('INVALID_NUMBER')}
+export async function validateWorkflow(state,crypto=globalThis.crypto){
+ const bytes=JSON.stringify(state);if(typeof bytes!=='string'||new TextEncoder().encode(bytes).length>4000000)fail('WORKFLOW_TOO_LARGE');safeTree(state);
+ if(!keys(state,'schema,execution,id,createdAt,syntheticAuthorized,source,legacy,graphs,currentVersion,runs,currentRuns,approvals,pause')||state.schema!=='prism-custom-workflow/v1'||state.execution!=='synthetic-only'||typeof state.syntheticAuthorized!=='boolean'||!id(state.id)||!date(state.createdAt)||!Array.isArray(state.graphs)||state.graphs.length<1||state.graphs.length>100||!integer(state.currentVersion,1,100)||state.currentVersion!==state.graphs.length||!Array.isArray(state.runs)||state.runs.length>500||!state.currentRuns||Array.isArray(state.currentRuns)||typeof state.currentRuns!=='object'||!Array.isArray(state.approvals)||state.approvals.length>30)fail('INVALID_WORKFLOW');validateSource(state.source);
+ await validateLegacy(state.legacy,state.source,crypto);
+ const allIds=new Set();let prev=null;for(const [index,g] of state.graphs.entries()){
+  if(!keys(g,'version,nodes,policy,sha256')||g.version!==index+1||!hash(g.sha256))fail('INVALID_GRAPH');validateNodes(g.nodes);validatePolicy(g.policy,g.nodes);const {sha256:d,...payload}=g;if(await sha256(JSON.stringify(payload),crypto)!==d)fail('GRAPH_HASH_MISMATCH');
+  for(const n of g.nodes){const old=prev?.nodes.find(x=>x.id===n.id);if(old){if(old.kind!==n.kind||n.promptVersion!==old.promptVersion+(old.prompt===n.prompt?0:1))fail('INVALID_NODE_HISTORY')}else if(allIds.has(n.id)||n.promptVersion!==1)fail('REUSED_NODE_ID');allIds.add(n.id)}prev=g;
+ }
+ const byRun=new Map();let replayVersion=0,replay={};const sourceHash=await sha256(JSON.stringify(state.source),crypto);let running=0;
+ for(const r of state.runs){if(!keys(r,'id,nodeId,graphVersion,graphSha256,promptVersion,prompt,sourceHash,upstream,status,artifact,verdict,startedAt,endedAt')||!id(r.id)||byRun.has(r.id)||!id(r.nodeId)||!integer(r.graphVersion,1,state.currentVersion)||!hash(r.graphSha256)||!integer(r.promptVersion,1,10000)||!str(r.prompt,16000)||r.sourceHash!==sourceHash||!Array.isArray(r.upstream)||r.upstream.length>29||!['running','completed','failed','cancelled','interrupted'].includes(r.status)||!date(r.startedAt)||!(r.endedAt===null||date(r.endedAt)))fail('INVALID_RUN');
+  const g=state.graphs[r.graphVersion-1],n=g.nodes.find(n=>n.id===r.nodeId);if(!n||r.graphSha256!==g.sha256||r.promptVersion!==n.promptVersion||r.prompt!==n.prompt||r.upstream.length!==n.dependsOn.length)fail('RUN_GRAPH_MISMATCH');
+  if(r.graphVersion<replayVersion||!g.policy.allowSynthetic||byRun.size>=g.policy.maxRuns)fail('INVALID_RUN_SEQUENCE');if(r.graphVersion!==replayVersion){replayVersion=r.graphVersion;replay={}}if(replay[r.nodeId]||r.upstream.some(u=>replay[u.nodeId]!==u.runId))fail('STALE_HISTORICAL_LINEAGE');
+  if(r.status==='running'){running++;if(r.endedAt!==null||r.graphVersion!==state.currentVersion)fail('INVALID_ACTIVE_RUN')}else if(r.endedAt===null)fail('MISSING_RUN_END');
+  for(const [i,u] of r.upstream.entries()){if(!keys(u,'nodeId,runId,artifactSha256')||u.nodeId!==n.dependsOn[i]||!id(u.runId)||!hash(u.artifactSha256))fail('INVALID_UPSTREAM');const parent=byRun.get(u.runId);if(!parent||parent.graphVersion!==r.graphVersion||parent.nodeId!==u.nodeId||parent.status!=='completed'||parent.verdict==='revise'||parent.artifact?.sha256!==u.artifactSha256)fail('UPSTREAM_MISMATCH')}
+  if(r.status==='completed'){
+   if(!keys(r.artifact,'text,sha256')||!str(r.artifact.text,100000)||!hash(r.artifact.sha256)||n.kind==='work'&&r.verdict!==null||n.kind==='review'&&!['pass','revise'].includes(r.verdict))fail('INVALID_ARTIFACT');
+   const expected=`SYNTHETIC ONLY / NOT RESEARCH FINDINGS\nNode: ${n.id}\nGraph: ${g.version}\nPrompt version: ${n.promptVersion}\n${n.kind==='review'?'Synthetic verdict: '+r.verdict:'Generated local fixture; no paper analyzed, no provider called.'}`;
+   if(r.artifact.text!==expected||await sha256(r.artifact.text,crypto)!==r.artifact.sha256)fail('ARTIFACT_HASH_MISMATCH');
+  }else if(r.artifact!==null||r.verdict!==null)fail('UNFINISHED_ARTIFACT');
+  if(r.status==='completed'){replay[r.nodeId]=r.id;if(r.verdict==='revise'){const removed=new Set([n.reviewTarget]);let change=true;while(change){change=false;for(const node of g.nodes)if(!removed.has(node.id)&&node.dependsOn.some(x=>removed.has(x))){removed.add(node.id);change=true}}for(const x of removed)delete replay[x]}}
+  if(r.status==='running'&&state.runs.at(-1)!==r)fail('INVALID_RUN_SEQUENCE');byRun.set(r.id,r);
+ }
+ if(running>1)fail('MULTIPLE_ACTIVE_RUNS');if(replayVersion!==state.currentVersion)replay={};if(JSON.stringify(Object.entries(replay).sort())!==JSON.stringify(Object.entries(state.currentRuns).sort()))fail('CURRENT_REPLAY_MISMATCH');
+ // Historical references cannot disappear from later graph versions.
+ for(const r of state.runs)for(const g of state.graphs.slice(r.graphVersion))if(!g.nodes.some(n=>n.id===r.nodeId)||r.upstream.some(u=>!g.nodes.some(n=>n.id===u.nodeId)))fail('DELETED_HISTORICAL_NODE');
+ const graph=currentGraph(state);for(const [nodeId,rid] of Object.entries(state.currentRuns)){const r=byRun.get(rid);if(!graph.nodes.some(n=>n.id===nodeId)||!r||r.nodeId!==nodeId||r.graphVersion!==state.currentVersion||r.status!=='completed'||r.verdict==='revise')fail('INVALID_CURRENT_RUN');for(const u of r.upstream)if(state.currentRuns[u.nodeId]!==u.runId)fail('STALE_CURRENT_LINEAGE')}
+ const approved=new Set();for(const a of state.approvals){if(!keys(a,'nodeId,token')||!id(a.nodeId)||approved.has(a.nodeId)||!str(a.token,10000)||!graph.nodes.some(n=>n.id===a.nodeId))fail('INVALID_APPROVAL');approved.add(a.nodeId);const n=graph.nodes.find(n=>n.id===a.nodeId);if(a.token!==token(state,n))fail('STALE_APPROVAL')}
+ if(state.pause!==null&&(!keys(state.pause,'code,nodeId')||!pauseCodes.has(state.pause.code)||!(state.pause.nodeId===null||graph.nodes.some(n=>n.id===state.pause.nodeId))))fail('INVALID_PAUSE');return true;
+}
+export async function exportWorkflow(state,crypto=globalThis.crypto){await validateWorkflow(state,crypto);assertExportBudget(state);const payload={schema:'prism-custom-workflow-backup/v1',notice:'仅本地合成演示，非真实执行或科学审核。回导清除授权并暂停，不自动恢复运行。',state};const result=JSON.stringify({...payload,sha256:await sha256(JSON.stringify(payload),crypto)},null,2);if(new TextEncoder().encode(result).length>4000000)fail('EXPORT_TOO_LARGE');return result}
+export async function importWorkflow(raw,crypto=globalThis.crypto){if(typeof raw!=='string'||new TextEncoder().encode(raw).length>4000000)fail('IMPORT_TOO_LARGE');let x;try{x=JSON.parse(raw)}catch{fail('INVALID_BACKUP_JSON')}safeTree(x);if(!keys(x,'schema,notice,state,sha256')||x.schema!=='prism-custom-workflow-backup/v1'||!str(x.notice,1000)||!hash(x.sha256))fail('INVALID_BACKUP');const {sha256:d,...payload}=x;if(await sha256(JSON.stringify(payload),crypto)!==d)fail('BACKUP_HASH_MISMATCH');await validateWorkflow(x.state,crypto);const s=clone(x.state);s.syntheticAuthorized=false;s.approvals=[];for(const r of s.runs)if(r.status==='running'){r.status='interrupted';r.endedAt=now()}s.pause={code:'RESTORED_REQUIRES_CONFIRMATION',nodeId:null};
+ // Do not rewrite immutable graph history. Runtime permission is always cleared on restore.
+ return safeResult(s)}
+export async function previewLegacyMigration({namespace,paper},crypto=globalThis.crypto){if(!str(namespace,300)||!paper||!id(paper.id)||!str(paper.title,500)||!Array.isArray(paper.steps)||paper.steps.length!==3||paper.steps.some(s=>!str(s.name,100)||!str(s.prompt,16000)))fail('INVALID_LEGACY_PAPER');safeTree(paper);const snapshot=clone(paper),sourceArchiveSha256=await sha256(JSON.stringify(snapshot),crypto);
+ const nodes=defaultNodes().map((n,i)=>({...n,name:paper.steps[i].name,prompt:paper.steps[i].prompt}));const workflow=await createWorkflow({nodes,policy:DEFAULT_POLICY,source:{namespace,paperId:paper.id,paperTitle:paper.title,documentSha256:paper.document?.sha256??null,sourceArchiveSha256},legacy:{snapshot,sha256:sourceArchiveSha256}},crypto);return freeze({notice:'仅迁移预览：新workflow、稳定ID、默认手动且禁止合成执行；旧档案不改、旧运行仅只读快照、不继承已完成或审核通过。',workflow})}
+
+export async function authorizeSynthetic(state,allowed,crypto=globalThis.crypto){await validateWorkflow(state,crypto);if(typeof allowed!=='boolean')fail('INVALID_PERMISSION');if(activeRun(state))fail('ACTIVE_RUN');const s=clone(state);s.syntheticAuthorized=allowed;if(allowed&&s.pause?.code==='SYNTHETIC_PERMISSION_REQUIRED')s.pause=null;return safeResult(s)}

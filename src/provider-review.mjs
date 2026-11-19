@@ -1,0 +1,15 @@
+/** Local-only preflight preparation. No network, credentials, settings or provider calls. */
+export function createProviderReview({store,crypto=globalThis.crypto}={}){
+ const listeners=new Set();let prepared=null,checked=null,error=null,busy=false,closed=false,snapshot;
+ const fail=message=>{throw Error(message)},clone=x=>JSON.parse(JSON.stringify(x));
+ const emit=()=>{snapshot=Object.freeze({prepared:prepared?clone(prepared):null,checked,error,busy,externalSubmissionEnabled:false});listeners.forEach(f=>f())};
+ function selection(paperId,stepIndex){if(closed)fail('PROVIDER_REVIEW_CLOSED');store.assertCurrentStorage();const p=store.getSnapshot().papers.find(x=>x.id===paperId),s=p?.steps[stepIndex];if(!s||!Number.isInteger(stepIndex)||!Number.isSafeInteger(s.promptVersion)||s.promptVersion<1||typeof s.prompt!=='string'||!s.prompt.trim()||s.prompt.length>16000)fail('PROVIDER_REVIEW_INVALID_NODE');return {paperId,stepIndex,promptVersion:s.promptVersion,prompt:s.prompt}}
+ function current(){if(!prepared)fail('PROVIDER_REVIEW_MISSING');const now=selection(prepared.payload.paperId,prepared.payload.stepIndex);for(const k of Object.keys(now))if(now[k]!==prepared.payload[k])fail('PROVIDER_REVIEW_STALE')}
+ async function digest(v){if(!crypto?.subtle||!crypto?.randomUUID)fail('PROVIDER_REVIEW_CRYPTO_UNAVAILABLE');return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(v)))),b=>b.toString(16).padStart(2,'0')).join('')}
+ emit();return {subscribe(f){listeners.add(f);return()=>listeners.delete(f)},getSnapshot:()=>snapshot,
+ async prepare(paperId,stepIndex){if(busy)fail('PROVIDER_REVIEW_BUSY');busy=true;checked=null;prepared=null;error=null;emit();try{const sel=selection(paperId,stepIndex);if(!crypto?.randomUUID)fail('PROVIDER_REVIEW_CRYPTO_UNAVAILABLE');const payload={requestId:crypto.randomUUID(),...sel,providerId:null,modelId:null,endpoint:null,tools:[],cost:'unknown',externalSubmissionEnabled:false,stage:'local-prompt-review-not-final-http',credentials:'not-collected'};const bindingHash=await digest(payload);const now=selection(paperId,stepIndex);if(Object.keys(sel).some(k=>sel[k]!==now[k]))fail('PROVIDER_REVIEW_STALE');prepared={payload,bindingHash};return clone(prepared)}catch(e){error=e.message;throw e}finally{busy=false;emit()}},
+ check(requestId,bindingHash){try{current();if(prepared.payload.requestId!==requestId||prepared.bindingHash!==bindingHash)fail('PROVIDER_REVIEW_STALE');checked=JSON.stringify([requestId,bindingHash]);error=null}catch(e){checked=null;error=e.message;throw e}finally{emit()}},
+ clear(){checked=null;emit()},
+ exportReview(){current();if(checked!==JSON.stringify([prepared.payload.requestId,prepared.bindingHash]))fail('PROVIDER_REVIEW_ACK_REQUIRED');return JSON.stringify({formatVersion:1,...prepared,acknowledgedLocalReview:true,authorizedExternalSubmission:false,limitation:'Not final HTTP preview. Provider, model, endpoint, canonical system/messages and transport parameters remain unverified; cannot send.'},null,2)},
+ close(){closed=true;prepared=null;checked=null;emit();listeners.clear()}};
+}

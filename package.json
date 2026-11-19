@@ -1,0 +1,94 @@
+{
+  "name": "prism-local-workbench",
+  "version": "0.2.0-preview.1",
+  "private": true,
+  "type": "module",
+  "description": "Local research workbench with an optional DeepSeek account connection for individual work nodes",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./host-projects": "./lib/host-projects.mjs",
+    "./host-project-import": "./lib/host-project-import.mjs",
+    "./project-import-client": "./lib/project-import-client.mjs",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./host-readonly-node": "./lib/host-readonly-node.mjs"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/host-projects.mjs",
+    "lib/host-project-import.mjs",
+    "lib/project-import-client.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "WINDOWS.md",
+    "QUICKSTART.zh-CN.md",
+    "QUICKSTART.en.md",
+    "DSH-DIRECT.md",
+    "CHANGELOG.md",
+    "prism-dsh.example.yml",
+    "prism-launch.example.json",
+    "prism-windows.ps1",
+    "INSTALL-PRISM.cmd",
+    "START-PRISM.cmd",
+    "START-PRISM-MANUAL.cmd",
+    "OPEN-PRISM.cmd",
+    "THIRD_PARTY_NOTICES.md",
+    "THIRD_PARTY_MANIFEST.json",
+    "THIRD-PARTY-RICH-TEXT-MANIFEST.json",
+    "third-party/anti-defensive-writing",
+    "third-party/shadcn-ui",
+    "third-party/rich-text",
+    "third-party/sources",
+    "third-party/pdf-intake-original-lock.json",
+    "third-party/pdf-worker-original-derivation.json",
+    "src/pdf-intake/licenses",
+    "src/pdf-intake/vendor",
+    "lib/host-readonly-node.mjs",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": "0.2.2-rc.1",
+    "node": ">=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@radix-ui/react-label": "2.1.17",
+    "@radix-ui/react-slot": "1.5.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "esbuild": "0.25.12",
+    "jsdom": "31.0.0",
+    "lucide-react": "1.74.0",
+    "postcss": "8.5.33",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.5"
+  },
+  "scripts": {
+    "build": "node src/pdf-intake/build.mjs && node scripts/build-client.mjs && node scripts/build-host.mjs",
+    "build:preview": "node src/pdf-intake/build.mjs && node scripts/build-client.mjs --development-preview",
+    "dev": "node scripts/dev-preview.mjs"
+  },
+  "license": "MIT",
+  "author": "GarryKin",
+  "homepage": "https://github.com/GarryKin824/prism-research-workbench",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GarryKin824/prism-research-workbench.git"
+  }
+}
